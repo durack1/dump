@@ -36,7 +36,7 @@ tas/gr1/v20220526/tas_Amon_INM-CM4-8_past1000_r1i1p1f1_gr1_095001-104912.nc
 <<"--"
 HOST="ksv.inm.ras.ru"
 USER="guest"
-PASS="sochi2014"
+PASS=""
 FTPURL="ftp://$USER:$PASS@$HOST"
 LCD="."
 RCD="/archive2/volodin"
