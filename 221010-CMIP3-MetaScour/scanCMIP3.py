@@ -11,6 +11,7 @@ PJD  7 Oct 2022     - Added "PST" test to NCAR files (alongside "MDT")
 PJD  8 Oct 2022     - Added ds.drop_vars call; add cmorVersion grab
 PJD  9 Oct 2022     - Augmented NCAR timezones; cmorVersion to str type
 PJD 10 Oct 2022     - Deal with edge case where CMOR was used to rewrite and CDO rewrote the rewritten /p/css03/esgf_publish/cmip3/ipcc/cfmip/2xco2/atm/mo/rsut/mpi_echam5/run1/rsut_CF1.nc
+PJD 12 Oct 2022     - Added noDateFileCount/List - separate non-bad files?
                     TODO: add time start/stop to files that exclude them
                     TODO: table mappings O1 = Omon?, O1e?
 
@@ -24,7 +25,7 @@ import re
 # import shutil
 import xarray as xr
 from xcdat import open_dataset
-import pdb
+# import pdb
 # import sys
 # import time
 
@@ -159,30 +160,38 @@ monList = ["Jan", "Feb", "Mar", "Apr", "May",
 bad = {
     "/p/css03/esgf_publish/cmip3/ipcc/data3/sresa2/ice/mo/sic/ingv_echam4/run1": ["", "fix bad time:units 20O1-1-1", "ds.time.attrs['units'] = 'days since 2001-01-01'", []],
     "/p/css03/esgf_publish/cmip3/ipcc/data3/sresa2/ice/mo/sit/ingv_echam4/run1": ["", "fix bad time:units 20O1-1-1", "ds.time.attrs['units'] = 'days since 2001-01-01'", []],
-    "/p/css03/esgf_publish/cmip3/ipcc/data8/picntrl/ocn/mo/rhopoto/ncar_ccsm3_0/run2": ["rhopoto_O1.PIcntrl_2.CCSM.ocnm.0585-01_cat_0589-12.nc", "drop bad time_bnds", None, ["time_bnds"]],
-    "/p/css03/esgf_publish/cmip3/ipcc/data16/sresa1b/atm/mo/rlds/mpi_echam5/run2": ["rlds_A1.nc", "drop bad time_bnds", None, ["time_bnds"]],
+    "/p/css03/esgf_publish/cmip3/ipcc/data8/picntrl/ocn/mo/rhopoto/ncar_ccsm3_0/run2": ["rhopoto_O1.PIcntrl_2.CCSM.ocnm.0585-01_cat_0589-12.nc", "drop bad time_bnds", "", ["time_bnds"]],
+    "/p/css03/esgf_publish/cmip3/ipcc/data16/sresa1b/atm/mo/rlds/mpi_echam5/run2": ["rlds_A1.nc", "drop bad time_bnds", "", ["time_bnds"]],
+    "/p/css03/esgf_publish/cmip3/ipcc/cfmip/2xco2/atm/da/pr/ukmo_hadsm4/run1": ["pr_CF3.nc", "bad time dimension", "", []],
     # /p/css03/esgf_publish/cmip3/ipcc/cfmip/2xco2/atm/mo/rsut/mpi_echam5/run1/rsut_CF1.nc
 }
 excludeDirs = set(["summer", ])
+# 004306 filePath: /p/css03/esgf_publish/cmip3/ipcc/summer/T4031qtC.pop.h.0019-08-21-43200.nc
 
 # %% iterate over files
 cm3 = {}
 cm3["!badFileList"] = {}
-badFileCount, cmorCount, count = [0 for _ in range(3)]
+cm3["!noDateFileList"] = {}
+badFileCount, cmorCount, count, noDateFileCount = [0 for _ in range(4)]
 for cmPath in ["/p/css03/esgf_publish/cmip3", "/p/css03/scratch/ipcc2_deleteme_July2020"]:
-    # for cmPath in ["/p/css03/esgf_publish/cmip3/ipcc/cfmip/2xco2/atm/mo/rsut/mpi_echam5/run1"]:  # bug hunting
+    # for cmPath in ["/p/css03/esgf_publish/cmip3/ipcc/data3/sresa2/ice/mo/sic/ingv_echam4/run1"]:  # bug hunting
     for root, dirs, files in os.walk(cmPath):
+        print("root:", root)
         # Add dirs to exclude;
         [dirs.remove(d) for d in list(dirs) if d in excludeDirs]
-        # 004306 filePath: /p/css03/esgf_publish/cmip3/ipcc/summer/T4031qtC.pop.h.0019-08-21-43200.nc
-        if root in bad:
+        if root in list(bad.keys()):
             # Weed out bad paths/files
+            #print("in here!")
+            # pdb.set_trace()
             badFile = bad[root][0]
             fixStrInfo = bad[root][1]
             fixStr = bad[root][2]
-            badVars = bad[root][3]
+            if bad[root][3] != []:
+                badVars = bad[root][3][0]
+            else:
+                badVars = None
         else:
-            fixStr, fixStrInfo, badVars = [None for _ in range(3)]
+            badFile, fixStrInfo, fixStr, badVars = [None for _ in range(4)]
             # continue
         if files:
             # print("files:", files)
@@ -205,11 +214,13 @@ for cmPath in ["/p/css03/esgf_publish/cmip3", "/p/css03/scratch/ipcc2_deleteme_J
                         False for _ in range(2)]  # set for each file
                     count = count+1  # file counter
                     # deal with file issues
-                    if (fixStr == None and badVars == None) or (badVars and (fileName != badFile)):
+                    # or (badVars and (fileName != badFile)):
+                    if (fixStr == None and badVars == None and badFile == None):
                         # print("if")
+                        # pdb.set_trace()
                         fh = open_dataset(filePath, use_cftime=True)
                     elif badVars and (fileName == badFile):  # badVars only
-                        # print("elif")
+                        # print("elif2")
                         print("badVars:", badVars)
                         fh = (
                             xr.open_dataset(
@@ -217,14 +228,21 @@ for cmPath in ["/p/css03/esgf_publish/cmip3", "/p/css03/scratch/ipcc2_deleteme_J
                             .pipe(xr.decode_cf)
                         )
                     elif badFile == "":  # fixFunc for all files only - 9863
-                        # print("else")
+                        # print("elif2")
                         fh = (
                             xr.open_dataset(filePath, decode_times=False)
                             .pipe(fixFunc(fixStr, fixStrInfo))
                             .pipe(xr.decode_cf)
                         )
                     # is there a need for fixFunc AND badVars?
-                    # pdb.set_trace()
+                    elif badVars == [] and (fileName == badFile):
+                        # print("elif3")
+                        # pdb.set_trace()
+                        badFileCount = badFileCount+1
+                        print("badFile; filePath:", filePath)
+                        cm3["!badFileCount"] = badFileCount
+                        cm3["!badFileList"][badFileCount] = filePath
+                        continue
                     if "T" in fh.cf.axes:
                         startTime = getTimes(fh.time[0])
                         endTime = getTimes(fh.time[-1])
@@ -273,14 +291,14 @@ for cmPath in ["/p/css03/esgf_publish/cmip3", "/p/css03/scratch/ipcc2_deleteme_J
                                     continue
                                 date = re.findall(dateFormat, attStr)
                                 # timezones
-                                timeZones = ["EDT", "MDT", "MST", "PDT", "PST"]
-                                # CSIRO format
+                                timeZones = ["EDT", "EST",
+                                             "MDT", "MST", "PDT", "PST"]
+                                # CSIRO format - r"year:[0-9]{4}:month:[0-9]{2}:day:[0-9]{2}"
                                 if date and ("year" in date[0]):
                                     date = date[0].replace("year:", "").replace(
                                         ":month:", "-").replace(":day:", "-")
                                     dateFound = True
-                                # NCAR CCSM format
-                                # elif date and (("MST" in date[0]) or ("PST" in date[0])) or ("PDT" in date[0]) or ("MDT" in date[0]) or ("EDT" in date[0]):
+                                # NCAR CCSM format - r"[a-zA-Z]{3}\s[a-zA-Z]{3}\s{1,2}\d{1,2}\s\d{1,2}.\d{2}.\d{2}\s[A-Z]{3}\s\d{4}"
                                 elif date and any(zone in date[0] for zone in timeZones):
                                     date = date[0].split(" ")
                                     mon = "{:02d}".format(
@@ -306,10 +324,10 @@ for cmPath in ["/p/css03/esgf_publish/cmip3", "/p/css03/scratch/ipcc2_deleteme_J
                         cm3["!cmorCount"] = cmorCount
                         cm3["!fileCount"] = count  # https://ascii.cl/
                     if not date:
-                        badFileCount = badFileCount+1
+                        noDateFileCount = noDateFileCount+1
                         print("no date; filePath:", filePath)
-                        cm3["!badFileCount"] = badFileCount
-                        cm3["!badFileList"][badFileCount] = filePath
+                        cm3["!noDateFileCount"] = noDateFileCount
+                        cm3["!noDateFileList"][noDateFileCount] = filePath
                     print("date:", date)
 
                     # close open file
@@ -333,11 +351,30 @@ for cmPath in ["/p/css03/esgf_publish/cmip3", "/p/css03/scratch/ipcc2_deleteme_J
         )
         fH.close()
 
-
 '''
+009859 filePath: /p/css03/esgf_publish/cmip3/ipcc/data3/sresa2/ice/mo/sic/ncar_ccsm3_0/run1/sic_O1.SRESA2_1.CCSM.icem.2000-01_cat_2099-12.nc
 att: history
-date: 2004-12-02
-002005 filePath: /p/css03/esgf_publish/cmip3/ipcc/data10/picntrl/ocn/mo/so/giss_model_e_h/run1/.so_O1.GISS3.PIcntrl.2120to2139.nc.1jbIG7
-no date; filePath: /p/css03/esgf_publish/cmip3/ipcc/data10/picntrl/ocn/mo/so/giss_model_e_h/run1/.so_O1.GISS3.PIcntrl.2120to2139.nc.1jbIG7
-002005 filePath: /p/css03/esgf_publish/cmip3/ipcc/data10/picntrl/ocn/mo/so/giss_model_e_h/run1/so_O1.GISS3.PIcntrl.2180to2199.nc
+date: 2005-04-28
+writing: 221011_cmip3.json
+009860 filePath: /p/css03/esgf_publish/cmip3/ipcc/data3/sresa2/ice/mo/sic/ncar_ccsm3_0/run2/sic_O1.SRESA2_2.CCSM.icem.2000-01_cat_2099-12.nc
+att: history
+date: 2005-06-10
+writing: 221011_cmip3.json
+009861 filePath: /p/css03/esgf_publish/cmip3/ipcc/data3/sresa2/ice/mo/sic/ncar_ccsm3_0/run3/sic_O1.SRESA2_3.CCSM.icem.2000-01_cat_2099-12.nc
+att: history
+date: 2005-06-12
+writing: 221011_cmip3.json
+009862 filePath: /p/css03/esgf_publish/cmip3/ipcc/data3/sresa2/ice/mo/sic/ncar_ccsm3_0/run4/sic_O1.SRESA2_4.CCSM.icem.2000-01_cat_2099-12.nc
+att: history
+date: 2005-06-12
+writing: 221011_cmip3.json
+009863 filePath: /p/css03/esgf_publish/cmip3/ipcc/data3/sresa2/ice/mo/sic/ncar_ccsm3_0/run5/sic_O1.SRESA2_5.CCSM.icem.2000-01_cat_2099-12.nc
+att: history
+date: 2005-07-22
+writing: 221011_cmip3.json
+writing: 221011_cmip3.json
+Traceback (most recent call last):
+  File "/p/user_pub/climate_work/durack1/tmp/scanCMIP3.py", line 184, in <module>
+    badVars = bad[root][3][0]
+IndexError: list index out of range
 '''
